@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NYC Car-Free Bike Map — every dedicated-path ride within 2 hours</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f7f8fa; --border: #e3e6ea;
+    --text: #1c2430; --muted: #67737f; --accent: #1565c0;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); }
+  #app { display: flex; height: 100%; }
+
+  /* ---------- sidebar ---------- */
+  #sidebar {
+    width: 372px; min-width: 372px; height: 100%; overflow-y: auto;
+    background: var(--bg); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+  }
+  header { padding: 16px 18px 10px; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 4px; font-size: 18px; }
+  header p { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.45; }
+  #search {
+    width: 100%; padding: 7px 11px; font-size: 13px; border: 1px solid var(--border);
+    border-radius: 8px; outline: none; background: var(--panel);
+  }
+  #search:focus { border-color: var(--accent); background: #fff; }
+  #chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .chip {
+    font-size: 11px; font-weight: 600; padding: 3.5px 10px; border-radius: 99px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--muted);
+    cursor: pointer; user-select: none; transition: all .12s;
+  }
+  .chip:hover { border-color: #b9c2cc; }
+  .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #countline { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+  .grouphead {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 18px 5px; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    cursor: pointer; user-select: none;
+  }
+  .grouphead .arrow { font-size: 10px; margin-right: 5px; display: inline-block; transition: transform .15s; }
+  .grouphead.collapsed .arrow { transform: rotate(-90deg); }
+  .grouphead button {
+    border: none; background: none; color: var(--accent); cursor: pointer;
+    font-size: 11px; font-weight: 600; padding: 2px 4px;
+  }
+  .groupbody.collapsed { display: none; }
+
+  .card {
+    margin: 4px 12px; padding: 9px 12px; border: 1px solid var(--border);
+    border-radius: 10px; cursor: pointer; transition: background .12s, border-color .12s;
+    position: relative;
+  }
+  .card:hover { background: var(--panel); }
+  .card.active { border-color: var(--accent); background: #eef4fc; }
+  .card.hidden-route { opacity: .45; }
+  .card .title { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; padding-right: 20px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex: 0 0 11px; }
+  .card .tagline { font-size: 11.5px; color: var(--muted); margin: 3px 0 6px 19px; line-height: 1.35; }
+  .badges { display: flex; gap: 5px; margin-left: 19px; flex-wrap: wrap; }
+  .badge {
+    font-size: 10.5px; padding: 1.5px 7px; border-radius: 99px;
+    background: var(--panel); border: 1px solid var(--border); color: var(--muted); font-weight: 600;
+  }
+  .badge.cf { color: #2e7d32; border-color: #c8e6c9; background: #f0f8f1; }
+  .badge.tr { color: #4527a0; border-color: #d8cff0; background: #f4f0fb; }
+  .badge.sf { color: #795548; border-color: #e0d4cc; background: #faf6f3; }
+  .eyetoggle {
+    position: absolute; top: 8px; right: 8px; border: none; background: none;
+    cursor: pointer; font-size: 14px; opacity: .55; padding: 2px;
+  }
+  .eyetoggle:hover { opacity: 1; }
+
+  /* ---------- detail panel ---------- */
+  #detail {
+    position: absolute; z-index: 1000; top: 12px; right: 12px; width: 360px;
+    max-height: calc(100% - 24px); overflow-y: auto;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.14); padding: 16px 18px; display: none;
+  }
+  #detail.open { display: block; }
+  #detail h2 { margin: 0 32px 2px 0; font-size: 16.5px; }
+  #detail .tagline { font-size: 12.5px; color: var(--muted); margin-bottom: 10px; }
+  #detail .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; min-width: 70px; }
+  .stat .v { font-size: 14.5px; font-weight: 700; }
+  .stat .k { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  #detail .desc { font-size: 13px; line-height: 1.55; margin-bottom: 10px; }
+  #detail ul { margin: 0 0 10px; padding-left: 18px; }
+  #detail li { font-size: 12.3px; line-height: 1.5; margin-bottom: 5px; color: #38424d; }
+  .trainbox {
+    background: #f4f0fb; border: 1px solid #d8cff0; border-radius: 9px;
+    padding: 9px 12px; font-size: 12.3px; line-height: 1.5; margin-bottom: 8px;
+  }
+  .trainbox b { color: #4527a0; }
+  #closeDetail {
+    position: absolute; top: 10px; right: 10px; border: none; background: var(--panel);
+    border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; color: var(--muted);
+  }
+  .elebox { margin-bottom: 10px; }
+  .elebox .elabels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 1px; }
+  .actions { display: flex; gap: 7px; margin-top: 4px; }
+  .actions button {
+    flex: 1; border: 1px solid var(--border); background: var(--panel); border-radius: 8px;
+    padding: 7px 0; font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer;
+  }
+  .actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- map ---------- */
+  #map { flex: 1; height: 100%; }
+  .home-icon {
+    background: #1c2430; color: #fff; border-radius: 50%; width: 30px !important; height: 30px !important;
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+    border: 2.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35);
+  }
+  .se-wrap { background: none; border: none; }
+  .se-icon {
+    border-radius: 50%; width: 20px !important; height: 20px !important; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700;
+    border: 2px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.4);
+  }
+  .mile-icon {
+    background: #fff; border: 1.5px solid #6b7682; border-radius: 8px; color: #38424d;
+    font-size: 9.5px; font-weight: 700; width: auto !important; height: 15px !important;
+    padding: 0 4px; display: flex; align-items: center; justify-content: center; white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0,0,0,.3);
+  }
+  .legend {
+    background: rgba(255,255,255,.94); border: 1px solid var(--border); border-radius: 9px;
+    padding: 9px 12px; font-size: 11.5px; line-height: 1.8; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  }
+  .legend .sw { display: inline-block; width: 26px; height: 0; border-top: 4px solid #888; vertical-align: middle; margin-right: 7px; border-radius: 2px; }
+  .legend .sw.dash { border-top: 3px dashed #5f6a72; }
+  .leaflet-popup-content { font-size: 12.5px; }
+  .leaflet-popup-content b { font-size: 13px; }
+  .leaflet-tooltip { font-weight: 600; }
+
+  .footnote { padding: 10px 18px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+  .footnote.first { border-top: 1px solid var(--border); margin-top: 8px; }
+  .footnote b { color: var(--text); }
+
+  /* mobile */
+  #sbtoggle { display: none; }
+  @media (max-width: 760px) {
+    #sidebar { position: absolute; z-index: 1100; width: 88%; min-width: 0; max-width: 350px; transform: translateX(-100%); transition: transform .2s; box-shadow: 4px 0 18px rgba(0,0,0,.18); }
+    #sidebar.open { transform: none; }
+    #sbtoggle { display: block; position: absolute; z-index: 1200; top: 12px; left: 12px;
+      background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px;
+      font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+    #detail { width: calc(100% - 24px); }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <button id="sbtoggle">☰ Routes</button>
+  <div id="sidebar">
+    <header>
+      <h1>🚲 NYC Car-Free Bike Map</h1>
+      <p>Every notable greenway &amp; rail trail within a <b>2-hour journey</b> of Midtown Manhattan by bike, train or ferry,
+         in all directions across NY, NJ, CT &amp; Long Island — nearly all majority <b>car-free dedicated path</b>,
+         plus a couple of legendary on-road classics (amber % badge). On the map, <b>solid lines are dedicated car-free path</b> and <b>dashed colored lines are on-road sections</b> — the car-free % on each card is measured from OpenStreetMap data.</p>
+      <input id="search" type="search" placeholder="Search routes… (e.g. beach, rail trail, Hudson)">
+      <div id="chips">
+        <span class="chip" data-f="carfree">≥85% car-free</span>
+        <span class="chip" data-f="paved">Paved</span>
+        <span class="chip" data-f="gravel">Gravel / dirt</span>
+        <span class="chip" data-f="beach">🏖 Beach</span>
+        <span class="chip" data-f="loop">Loop</span>
+        <span class="chip" data-f="transit">🚆 Uses transit</span>
+      </div>
+      <div id="countline"></div>
+    </header>
+    <div id="routelist"></div>
+    <div class="footnote first">
+      <b>Shorter / honorable mentions</b> (not drawn):
+      Roosevelt Island loop (NYC Ferry or RI Bridge) · Forest Park, Queens · Hutchinson River Greenway ·
+      Wolfe's Pond via the Staten Island Railway · Middlesex Greenway, Metuchen (3.5 mi, NE Corridor) ·
+      Traction Line, Morristown &amp; Loantaka Brook paths (M&amp;E) · Branch Brook Park, Newark (cherry blossoms) ·
+      Derby Greenway, CT (2 mi, Waterbury branch) · Norwalk River Valley Trail, Wilton CT (still patchy) ·
+      Shoreline Greenway Trail, CT (fragmentary) · Hudson River Waterfront Walkway, Hoboken–Jersey City ·
+      Hempstead Lake SP (LIRR Hempstead) · Sunken Meadow SP (LIRR Kings Park) · Heckscher SP (LIRR Great River) ·
+      Overpeck County Park, Bergen · Paulinskill Valley Trail (joins the Sussex Branch at Warbasse Jct) ·
+      Ashokan Rail Trail (rideable from our Kingston endpoint via the O&amp;W rail trail, ~10 mi) ·
+      Seven Lakes Drive, Harriman SP via Tuxedo (park road, on-road like Bear Mountain).
+      <b>Coming soon</b>: Essex–Hudson Greenway (Montclair→Jersey City) · QueensWay (Rego Park) ·
+      HVRT north toward Hillsdale/Philmont · Hudson Highlands Fjord Trail (Beacon–Cold Spring).
+      <b>Excluded on purpose</b>: the High Line (no bikes allowed) · Rockefeller Preserve carriage roads (same).
+    </div>
+    <div class="footnote" style="padding-bottom:20px">
+      Route lines follow real paths (OpenStreetMap data via BRouter). Dashed gray lines are train,
+      subway or ferry transfers. Distances are one-way unless marked as loops.
+      Since 2023 no bike permit is needed on Metro-North or the LIRR; bikes ride the subway and Staten Island Ferry
+      anytime, NYC Ferry for $1, Amtrak with a $20 reservation. Avoid rush-hour trains.
+      Switch the base layer to <b>CyclOSM</b> (top-right) to see all bike infrastructure.
+      Still excluded: Rockefeller Preserve's carriage roads (bikes prohibited there).
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="detail">
+    <button id="closeDetail" title="close (Esc)">✕</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/*__DATA__*/
+</script>
+<script>
+const START = [40.7681, -73.9819]; // Columbus Circle — generic Manhattan origin
+const SURFACE_LABEL = { paved: 'paved', gravel: 'gravel', dirt: 'dirt', mixed: 'paved+gravel' };
+// car-free badge: green >=90, olive 70-89, amber below (on-road classics)
+function cfBadge(r) {
+  const st = r.carfree >= 90 ? '' :
+    r.carfree >= 70 ? 'color:#827717;border-color:#dce3a8;background:#fafbe9' :
+                      'color:#b26a00;border-color:#f3ddb3;background:#fdf6e8';
+  return `<span class="badge cf" style="${st}">${r.carfree}% car-free</span>`;
+}
+
+const map = L.map('map', { zoomControl: true }).setView([40.83, -73.92], 11);
+
+const carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 19,
+}).addTo(map);
+const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  maxZoom: 19,
+});
+const cyclosm = L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
+  attribution: '<a href="https://www.cyclosm.org">CyclOSM</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+});
+L.control.layers({ 'Streets': carto, 'Dark': dark, 'CyclOSM (bike infrastructure)': cyclosm }, null, { position: 'topright' }).addTo(map);
+L.control.scale({ imperial: true, metric: false }).addTo(map);
+
+L.marker(START, {
+  icon: L.divIcon({ className: 'home-icon', html: '🚲', iconSize: [30, 30], iconAnchor: [15, 15] }),
+  zIndexOffset: 1000,
+}).addTo(map).bindPopup('<b>Columbus Circle</b><br>Manhattan ride routes start here');
+
+const legend = L.control({ position: 'bottomright' });
+legend.onAdd = () => {
+  const d = L.DomUtil.create('div', 'legend');
+  d.innerHTML = '<span class="sw" style="border-color:#1565c0"></span>Dedicated car-free path<br>' +
+                '<span class="sw" style="border-top:3px dashed #1565c0"></span>On-road section of a route<br>' +
+                '<svg width="26" height="6" style="vertical-align:middle;margin-right:7px"><line x1="0" y1="3" x2="26" y2="3" stroke="#5f6a72" stroke-width="4"/><line x1="0" y1="3" x2="26" y2="3" stroke="#fff" stroke-width="2" stroke-dasharray="2 5"/></svg>Train / subway line<br>' +
+                '<svg width="26" height="6" style="vertical-align:middle;margin-right:7px"><line x1="2" y1="3" x2="26" y2="3" stroke="#5f6a72" stroke-width="4" stroke-dasharray="0.1 7" stroke-linecap="round"/></svg>Ferry crossing<br>' +
+                '🚲 Columbus Circle (start)';
+  return d;
+};
+legend.addTo(map);
+
+const GROUPS = [
+  { key: 'ride',  title: '🚲 Ride from Manhattan' },
+  { key: 'ferry', title: '⛴️ Bike + ferry' },
+  { key: 'train', title: '🚆 Train + trail day trips' },
+];
+
+const layers = {};   // id -> L.layerGroup
+const visible = {};  // id -> manual eye state
+let activeId = null;
+const activeDecor = L.layerGroup().addTo(map);
+
+// ---- geometry helpers ----
+function haversineMi(a, b) {
+  const R = 3958.8, d2r = Math.PI / 180;
+  const dLat = (b[0] - a[0]) * d2r, dLon = (b[1] - a[1]) * d2r;
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * d2r) * Math.cos(b[0] * d2r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+function cumDist(r) {
+  if (r._cum) return r._cum;
+  const c = [0];
+  for (let i = 1; i < r.pts.length; i++) c.push(c[i - 1] + haversineMi(r.pts[i - 1], r.pts[i]));
+  return (r._cum = c);
+}
+
+function popupHtml(r) {
+  const loop = r.oneway ? 'one way' : 'loop';
+  return `<b>${r.name}</b><br>${r.mi} mi ${loop} · ${r.carfree}% car-free · ${r.climb} ft climb<br>` +
+         `<a href="#" onclick="setActive('${r.id}',false);return false;">Details →</a>`;
+}
+
+// expand run-length segs into multi-polyline latlng arrays per class
+function segRuns(r, cls) {
+  const runs = []; let s = 0;
+  for (const [end, c] of r.segs) {
+    if (c === cls) runs.push(r.pts.slice(Math.max(0, s - 1), end));
+    s = end;
+  }
+  return runs;
+}
+
+function buildLayer(r) {
+  const g = L.layerGroup();
+  const casing = L.polyline(r.pts, { color: '#ffffff', weight: 8, opacity: .85 });
+  g.addLayer(casing);
+  const linePath = L.polyline(segRuns(r, 1), { color: r.color, weight: 4.5, opacity: .92 });
+  const lineRoad = L.polyline(segRuns(r, 0), { color: r.color, weight: 3.5, opacity: .92, dashArray: '5 7' });
+  const lines = [linePath, lineRoad];
+  lines.forEach(line => {
+    line.bindPopup(popupHtml(r));
+    line.bindTooltip(r.name, { sticky: true, direction: 'top', offset: [0, -8] });
+    line.on('click', () => setActive(r.id, false));
+    g.addLayer(line);
+  });
+  (r.trains || []).forEach(tr => {
+    const t = TRAINLINES[tr.line];
+    const isFerry = /ferry|seastreak/.test(tr.line);
+    const popup = `<b>${t.name}</b><br>${tr.boardAt} → ${tr.alightAt}`;
+    if (isFerry) {
+      g.addLayer(L.polyline(t.pts, { color: t.color, weight: 4, opacity: .8, dashArray: '0.1 9', lineCap: 'round' })
+        .bindPopup(popup).bindTooltip(t.name, { sticky: true }));
+    } else {
+      // railway-style: solid gray base with white cross-hatch ties
+      g.addLayer(L.polyline(t.pts, { color: t.color, weight: 4, opacity: .65 })
+        .bindPopup(popup).bindTooltip(t.name, { sticky: true }));
+      g.addLayer(L.polyline(t.pts, { color: '#ffffff', weight: 2, opacity: .9, dashArray: '2 7', interactive: false }));
+    }
+  });
+  r._lines = lines; r._casing = casing;
+  r._bounds = L.latLngBounds(r.pts);
+  return g;
+}
+
+ROUTES.forEach(r => {
+  layers[r.id] = buildLayer(r);
+  visible[r.id] = true;
+  layers[r.id].addTo(map);
+});
+
+function refreshStyles() {
+  ROUTES.forEach(r => {
+    const dim = activeId && r.id !== activeId;
+    const active = r.id === activeId;
+    r._lines[0].setStyle({ opacity: dim ? .22 : .92, weight: active ? 6.5 : 4.5 });
+    r._lines[1].setStyle({ opacity: dim ? .22 : .92, weight: active ? 5 : 3.5 });
+    r._casing.setStyle({ opacity: dim ? .15 : .85 });
+  });
+}
+
+// ---------- sidebar ----------
+const listEl = document.getElementById('routelist');
+GROUPS.forEach(gr => {
+  const routes = ROUTES.filter(r => r.group === gr.key);
+  if (!routes.length) return;
+  const head = document.createElement('div');
+  head.className = 'grouphead'; head.id = 'gh-' + gr.key;
+  head.innerHTML = `<span><span class="arrow">▾</span>${gr.title} <span class="gcount"></span></span><span>
+      <button data-g="${gr.key}" data-on="1">all</button> ·
+      <button data-g="${gr.key}" data-on="0">none</button></span>`;
+  listEl.appendChild(head);
+  const body = document.createElement('div');
+  body.className = 'groupbody'; body.id = 'gb-' + gr.key;
+  listEl.appendChild(body);
+  head.addEventListener('click', e => {
+    if (e.target.tagName === 'BUTTON') return;
+    head.classList.toggle('collapsed'); body.classList.toggle('collapsed');
+  });
+  routes.forEach(r => {
+    const c = document.createElement('div');
+    c.className = 'card'; c.id = 'card-' + r.id;
+    const loop = r.oneway ? 'one way' : 'loop';
+    const trbadge = (r.trains && r.trains.length) ? `<span class="badge tr">${r.trains[0].label.split('(')[0].trim()}</span>` : '';
+    const icons = (r.tags.includes('beach') ? ' 🏖' : '') + (r.tags.includes('climb') ? ' ⛰' : '') + (r.tags.includes('food') ? ' ☕' : '');
+    c.innerHTML = `
+      <div class="title"><span class="dot" style="background:${r.color}"></span>${r.name}${icons}</div>
+      <button class="eyetoggle" title="show / hide on map">👁</button>
+      <div class="tagline">${r.tagline}</div>
+      <div class="badges">
+        <span class="badge">${r.mi} mi ${loop}</span>
+        ${cfBadge(r)}
+        <span class="badge sf">${SURFACE_LABEL[r.surface]}</span>
+        ${trbadge}
+      </div>`;
+    c.addEventListener('click', e => {
+      if (e.target.classList.contains('eyetoggle')) { toggleRoute(r.id); return; }
+      setActive(r.id, true);
+    });
+    c.addEventListener('mouseenter', () => { if (matches(r)) r._lines.forEach(l => l.setStyle({ weight: 8, opacity: 1 })); });
+    c.addEventListener('mouseleave', refreshStyles);
+    body.appendChild(c);
+  });
+});
+listEl.addEventListener('click', e => {
+  if (e.target.dataset && e.target.dataset.g) {
+    const on = e.target.dataset.on === '1';
+    ROUTES.filter(r => r.group === e.target.dataset.g).forEach(r => setVisible(r.id, on));
+  }
+});
+
+// ---------- filters ----------
+const filterState = { q: '', chips: new Set() };
+function matches(r) {
+  if (filterState.q) {
+    const hay = (r.name + ' ' + r.tagline + ' ' + r.desc + ' ' + r.notes.join(' ')).toLowerCase();
+    if (!hay.includes(filterState.q)) return false;
+  }
+  for (const f of filterState.chips) {
+    if (f === 'carfree' && r.carfree < 85) return false;
+    if (f === 'paved' && r.surface !== 'paved') return false;
+    if (f === 'gravel' && !['gravel', 'dirt', 'mixed'].includes(r.surface)) return false;
+    if (f === 'beach' && !r.tags.includes('beach')) return false;
+    if (f === 'loop' && r.oneway) return false;
+    if (f === 'transit' && r.group === 'ride' && !(r.trains || []).length) return false;
+  }
+  return true;
+}
+function applyFilters() {
+  let shown = 0;
+  GROUPS.forEach(gr => {
+    let n = 0;
+    ROUTES.filter(r => r.group === gr.key).forEach(r => {
+      const ok = matches(r);
+      document.getElementById('card-' + r.id).style.display = ok ? '' : 'none';
+      syncLayer(r.id);
+      if (ok) { n++; shown++; }
+    });
+    const gc = document.querySelector('#gh-' + gr.key + ' .gcount');
+    if (gc) gc.textContent = `(${n})`;
+  });
+  document.getElementById('countline').textContent =
+    `${shown} of ${ROUTES.length} routes · ${Math.round(ROUTES.filter(matches).reduce((s, r) => s + r.mi, 0))} total miles shown`;
+  if (activeId && !matches(ROUTES.find(r => r.id === activeId))) clearActive();
+}
+document.getElementById('search').addEventListener('input', e => {
+  filterState.q = e.target.value.trim().toLowerCase(); applyFilters();
+});
+document.querySelectorAll('.chip').forEach(ch => ch.addEventListener('click', () => {
+  const f = ch.dataset.f;
+  if (filterState.chips.has(f)) { filterState.chips.delete(f); ch.classList.remove('on'); }
+  else { filterState.chips.add(f); ch.classList.add('on'); }
+  applyFilters();
+}));
+
+// ---------- visibility ----------
+function syncLayer(id) {
+  const r = ROUTES.find(x => x.id === id);
+  const want = visible[id] && matches(r);
+  const has = map.hasLayer(layers[id]);
+  if (want && !has) layers[id].addTo(map);
+  if (!want && has) map.removeLayer(layers[id]);
+}
+function setVisible(id, on) {
+  visible[id] = on;
+  document.getElementById('card-' + id).classList.toggle('hidden-route', !on);
+  syncLayer(id);
+  if (!on && activeId === id) clearActive();
+}
+function toggleRoute(id) { setVisible(id, !visible[id]); }
+
+// ---------- active route ----------
+function decorate(r) {
+  activeDecor.clearLayers();
+  const mk = (pt, txt, bg) => L.marker(pt, {
+    icon: L.divIcon({ className: 'se-wrap', html: `<div class="se-icon" style="background:${bg}">${txt}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] }),
+    zIndexOffset: 900,
+  });
+  activeDecor.addLayer(mk(r.pts[0], 'S', '#2e7d32'));
+  if (r.oneway) activeDecor.addLayer(mk(r.pts[r.pts.length - 1], 'E', '#1c2430'));
+  if (r.mi >= 8) {
+    const cum = cumDist(r);
+    let next = 5;
+    for (let i = 1; i < cum.length && next < r.mi; i++) {
+      if (cum[i] >= next) {
+        activeDecor.addLayer(L.marker(r.pts[i], {
+          icon: L.divIcon({ className: 'mile-icon', html: `${next} mi`, iconSize: null, iconAnchor: [12, 8] }),
+        }));
+        next += 5;
+      }
+    }
+  }
+}
+
+function setActive(id, zoom) {
+  activeId = id;
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+  const card = document.getElementById('card-' + id);
+  if (card) { card.classList.add('active'); card.scrollIntoView({ block: 'nearest' }); }
+  setVisible(id, true);
+  const r = ROUTES.find(x => x.id === id);
+  if (zoom) map.fitBounds(r._bounds, { padding: [40, 40] });
+  r._casing.bringToFront(); r._lines.forEach(l => l.bringToFront());
+  refreshStyles();
+  decorate(r);
+  openDetail(id);
+}
+function clearActive() {
+  activeId = null;
+  activeDecor.clearLayers();
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+  detailEl.classList.remove('open');
+  refreshStyles();
+}
+
+// ---------- path vs road strip ----------
+function segStrip(r) {
+  if (!r.segs || r.segs.length < 1) return '';
+  const cum = cumDist(r), total = cum[cum.length - 1] || 1;
+  let s = 0, parts = '';
+  for (const [end, cls] of r.segs) {
+    const x0 = 100 * cum[s] / total, x1 = 100 * cum[Math.min(end, cum.length) - 1] / total;
+    parts += `<rect x="${x0.toFixed(2)}%" y="0" width="${Math.max(x1 - x0, .15).toFixed(2)}%" height="10" fill="${cls ? '#2e7d32' : '#e65100'}"/>`;
+    s = end;
+  }
+  return `<div class="elebox">
+    <svg width="100%" height="10" style="display:block;border-radius:5px;background:var(--panel)">${parts}</svg>
+    <div class="elabels"><span><span style="color:#2e7d32">■</span> car-free path&nbsp;&nbsp;<span style="color:#e65100">■</span> on road</span><span>${r.carfree}% car-free (measured)</span></div>
+  </div>`;
+}
+
+// ---------- elevation profile ----------
+function eleSvg(r) {
+  if (!r.ele || r.ele.length < 2) return '';
+  const W = 320, H = 64, P = 2;
+  const cum = cumDist(r), total = cum[cum.length - 1] || 1;
+  let mn = Math.min(...r.ele), mx = Math.max(...r.ele);
+  if (mx - mn < 30) { mx = mn + 30; }
+  const x = i => P + (W - 2 * P) * cum[i] / total;
+  const y = e => H - P - (H - 2 * P) * (e - mn) / (mx - mn);
+  let path = `M${x(0).toFixed(1)},${y(r.ele[0]).toFixed(1)}`;
+  for (let i = 1; i < r.ele.length; i++) path += `L${x(i).toFixed(1)},${y(r.ele[i]).toFixed(1)}`;
+  const area = path + `L${W - P},${H - P}L${P},${H - P}Z`;
+  return `<div class="elebox">
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;background:var(--panel);border:1px solid var(--border);border-radius:8px">
+      <path d="${area}" fill="${r.color}" opacity="0.18"/>
+      <path d="${path}" fill="none" stroke="${r.color}" stroke-width="1.8"/>
+    </svg>
+    <div class="elabels"><span>elevation: ${mn}–${Math.max(...r.ele)} ft</span><span>${r.mi} mi →</span></div>
+  </div>`;
+}
+
+// ---------- GPX export ----------
+function downloadGpx(id) {
+  const r = ROUTES.find(x => x.id === id);
+  const pts = r.pts.map((p, i) =>
+    `      <trkpt lat="${p[0]}" lon="${p[1]}"><ele>${((r.ele[i] || 0) / 3.281).toFixed(1)}</ele></trkpt>`).join('\n');
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="bike-routes-map" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>${r.name.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</name><trkseg>
+${pts}
+  </trkseg></trk>
+</gpx>`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+  a.download = r.id + '.gpx';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function copyLink(id) {
+  const url = location.href.split('#')[0] + '#' + id;
+  (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(
+    () => { const b = document.getElementById('copyBtn'); if (b) { b.textContent = '✓ Copied'; setTimeout(() => b.textContent = '🔗 Copy link', 1500); } },
+    () => prompt('Copy this link:', url));
+}
+
+// ---------- detail panel ----------
+const detailEl = document.getElementById('detail');
+function openDetail(id) {
+  const r = ROUTES.find(x => x.id === id);
+  const loop = r.oneway ? 'one way' : 'loop';
+  const train = (r.trains || []).map(tr =>
+    `<div class="trainbox"><b>🚆 ${tr.label}</b><br>
+     Board: ${tr.boardAt}<br>Get off: ${tr.alightAt}</div>`).join('');
+  document.getElementById('detailContent').innerHTML = `
+    <h2><span class="dot" style="display:inline-block;background:${r.color};margin-right:6px"></span>${r.name}</h2>
+    <div class="tagline">${r.tagline}</div>
+    <div class="stats">
+      <div class="stat"><div class="v">${r.mi} mi</div><div class="k">${loop}</div></div>
+      <div class="stat"><div class="v"${r.carfree < 70 ? ' style="color:#b26a00"' : ''}>${r.carfree}%</div><div class="k">car-free</div></div>
+      <div class="stat"><div class="v">${r.climb} ft</div><div class="k">climbing</div></div>
+      <div class="stat"><div class="v">${SURFACE_LABEL[r.surface]}</div><div class="k">surface</div></div>
+    </div>
+    ${segStrip(r)}
+    ${eleSvg(r)}
+    <div class="desc"><b>⏱ ${r.time}.</b> ${r.desc}</div>
+    ${train}
+    <ul>${r.notes.map(n => `<li>${n}</li>`).join('')}</ul>
+    <div class="actions">
+      <button onclick="downloadGpx('${r.id}')">⬇ GPX for your bike computer</button>
+      <button id="copyBtn" onclick="copyLink('${r.id}')">🔗 Copy link</button>
+    </div>`;
+  detailEl.classList.add('open');
+}
+document.getElementById('closeDetail').addEventListener('click', clearActive);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') clearActive(); });
+
+// mobile sidebar toggle
+const sb = document.getElementById('sidebar');
+document.getElementById('sbtoggle').addEventListener('click', () => sb.classList.toggle('open'));
+map.on('click', () => sb.classList.remove('open'));
+
+// city / region view shortcuts
+const cityBounds = L.latLngBounds(ROUTES.filter(r => r.group !== 'train' && r.mi < 25).flatMap(r => r.pts));
+const regionBounds = L.latLngBounds(ROUTES.flatMap(r => r.pts));
+const viewCtl = L.control({ position: 'topleft' });
+viewCtl.onAdd = () => {
+  const d = L.DomUtil.create('div', 'legend');
+  d.style.cursor = 'pointer'; d.style.padding = '5px 8px';
+  d.innerHTML = '<a href="#" id="vCity" style="font-weight:600">City</a> &nbsp;|&nbsp; <a href="#" id="vRegion" style="font-weight:600">Full region</a>';
+  L.DomEvent.disableClickPropagation(d);
+  d.querySelector('#vCity').onclick = e => { e.preventDefault(); map.fitBounds(cityBounds, { padding: [30, 30] }); };
+  d.querySelector('#vRegion').onclick = e => { e.preventDefault(); map.fitBounds(regionBounds, { padding: [30, 30] }); };
+  return d;
+};
+viewCtl.addTo(map);
+
+applyFilters();
+
+// deep-link: #route-id opens that route; otherwise open on the full 2-hour region
+const hashId = location.hash.slice(1);
+if (hashId && ROUTES.some(r => r.id === hashId)) setActive(hashId, true);
+else map.fitBounds(regionBounds, { padding: [30, 30] });
+</script>
+</body>
+</html>
