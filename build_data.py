@@ -61,15 +61,9 @@ def coords(fid, step_target=900):
     ele = [round((pt[2] if len(pt) > 2 else 0) * 3.281) for pt in pts]
     return [[round(pt[1], 5), round(pt[0], 5)] for pt in pts], ele, runs, stats
 
-# Governors Island perimeter loop — hand-drawn (BRouter zigzags on the island)
-GOV_LOOP = [
-    [40.6932, -74.0157], [40.6928, -74.0135], [40.6925, -74.0118], [40.6915, -74.0100],
-    [40.6905, -74.0085], [40.6890, -74.0062], [40.6875, -74.0042], [40.6862, -74.0030],
-    [40.6848, -74.0042], [40.6838, -74.0055], [40.6826, -74.0082], [40.6817, -74.0108],
-    [40.6813, -74.0128], [40.6818, -74.0152], [40.6830, -74.0175], [40.6845, -74.0192],
-    [40.6862, -74.0205], [40.6880, -74.0212], [40.6895, -74.0207], [40.6908, -74.0195],
-    [40.6920, -74.0178], [40.6932, -74.0157],
-]
+# Governors Island perimeter loop — traced from the OSM island outline (relation 2389631);
+# the waterfront promenade hugs the shore, and BRouter zigzags on the island's dense footways
+GOV_LOOP = [list(p) for p in json.load(open(os.path.join(DATA, 'governors-outline.json')))]
 
 ROUTES = [
     # ============ RIDE FROM YOUR DOOR ============
