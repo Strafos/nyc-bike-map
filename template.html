@@ -37,6 +37,22 @@
   .chip:hover { border-color: #b9c2cc; }
   .chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   #countline { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  #modes { display: flex; gap: 6px; margin-top: 10px; }
+  .modebtn {
+    flex: 1; padding: 7px 0; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--muted);
+  }
+  .modebtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #tripHint {
+    display: none; margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text);
+    background: #eef4fc; border: 1px solid #c5d9f1; border-radius: 8px; padding: 8px 10px;
+  }
+  body.trip #tripHint { display: block; }
+  body.trip #chips, body.trip #search, body.trip #routelist, body.trip .footnote { display: none; }
+  .stn-tip b { font-size: 12px; }
+  .leg-row { display: flex; justify-content: space-between; font-size: 12.3px; padding: 4px 0; border-bottom: 1px dashed var(--border); }
+  .leg-row .nm { font-weight: 600; }
+  .leg-row .sub { color: var(--muted); font-size: 11px; }
 
   .grouphead {
     display: flex; align-items: center; justify-content: space-between;
@@ -176,6 +192,14 @@
         <span class="chip" data-f="transit">🚆 Uses transit</span>
       </div>
       <div id="countline"></div>
+      <div id="modes">
+        <button id="mExplore" class="modebtn on">🗺 Explore routes</button>
+        <button id="mTrip" class="modebtn">✏️ Plan a trip</button>
+      </div>
+      <div id="tripHint"><b>Trip planner.</b> The trails are split into segments at every
+      train station and junction. Click the network once for your <b>start</b>, again for the
+      <b>end</b> — the shortest trail path is composed for you, with train access at each end,
+      stats, and GPX. Click again to start a new trip.</div>
     </header>
     <div id="routelist"></div>
     <div class="footnote first">
@@ -264,6 +288,7 @@ const GROUPS = [
   { key: 'train', title: '🚆 Train + trail day trips' },
 ];
 
+let tripMode = false;
 const layers = {};   // id -> L.layerGroup
 const visible = {};  // id -> manual eye state
 let activeId = null;
@@ -307,9 +332,12 @@ function buildLayer(r) {
   const lineRoad = L.polyline(segRuns(r, 0), { color: r.color, weight: 3.5, opacity: .92, dashArray: '5 7' });
   const lines = [linePath, lineRoad];
   lines.forEach(line => {
-    line.bindPopup(popupHtml(r));
     line.bindTooltip(r.name, { sticky: true, direction: 'top', offset: [0, -8] });
-    line.on('click', () => setActive(r.id, false));
+    line.on('click', e => {
+      if (tripMode) { planClick(e.latlng); return; }
+      setActive(r.id, false);
+      line.bindPopup(popupHtml(r)).openPopup(e.latlng);
+    });
     g.addLayer(line);
   });
   (r.trains || []).forEach(tr => {
@@ -616,9 +644,352 @@ viewCtl.addTo(map);
 
 applyFilters();
 
-// deep-link: #route-id opens that route; otherwise open on the full 2-hour region
-const hashId = location.hash.slice(1);
-if (hashId && ROUTES.some(r => r.id === hashId)) setActive(hashId, true);
+// ================= TRIP PLANNER =================
+const clsCache = {};
+function clsArr(ri) {
+  if (clsCache[ri]) return clsCache[ri];
+  const r = ROUTES[ri], a = [];
+  let s = 0;
+  for (const [end, c] of r.segs) { for (let i = s; i < end; i++) a.push(c); s = end; }
+  return (clsCache[ri] = a);
+}
+const cumCache = {};
+function cumR(ri) {
+  if (cumCache[ri]) return cumCache[ri];
+  return (cumCache[ri] = cumDist(ROUTES[ri]));
+}
+function legStats(ri, i0, i1) { // undirected extent stats + directional climb i0->i1
+  const r = ROUTES[ri], cum = cumR(ri), cls = clsArr(ri);
+  const lo = Math.min(i0, i1), hi = Math.max(i0, i1);
+  let ded = 0;
+  for (let i = lo; i < hi; i++) if (cls[i + 1]) ded += cum[i + 1] - cum[i];
+  let climb = 0;
+  const st = i0 < i1 ? 1 : -1;
+  for (let i = i0; i !== i1; i += st) { const d = r.ele[i + st] - r.ele[i]; if (d > 0) climb += d; }
+  return { mi: Math.abs(cum[i1] - cum[i0]), ded, climb };
+}
+
+// graph adjacency
+const adj = NETWORK.nodes.map(() => []);
+NETWORK.edges.forEach((e, ei) => {
+  const [a, b, ri, i0, i1] = e;
+  const mi = Math.abs(cumR(ri)[i1] - cumR(ri)[i0]);
+  adj[a].push({ to: b, ei, mi, rev: false });
+  adj[b].push({ to: a, ei, mi, rev: true });
+});
+
+let tripStart = null, tripEnd = null;   // {node:id} or {temp:{ri,pi,edges:[...]}}
+const tripLayer = L.layerGroup();
+const stationLayer = L.layerGroup();
+NETWORK.nodes.forEach((n, ni) => {
+  if (!n[2] || !n[2].length) return;
+  const subwayOnly = n[2].every(s => s[3]);
+  const m = L.circleMarker([n[0], n[1]], {
+    radius: subwayOnly ? 4 : 5.5, color: '#1c2430', weight: 1.5,
+    fillColor: subwayOnly ? '#9aa6b2' : '#ffffff', fillOpacity: 1,
+  });
+  m.bindTooltip('<div class="stn-tip">' + n[2].map(s =>
+    `<b>${s[0]}</b> <span style="color:#67737f">${s[1]}${s[2] > 0.15 ? ' · ' + s[2] + ' mi from trail' : ''}</span>`
+  ).join('<br>') + '</div>');
+  m.on('click', e => { L.DomEvent.stop(e.originalEvent || e); planClick(ni); });
+  stationLayer.addLayer(m);
+});
+
+function nearestTrailPoint(latlng) {
+  let best = null, bd = Infinity;
+  ROUTES.forEach((r, ri) => r.pts.forEach((p, pi) => {
+    const d = (p[0] - latlng.lat) ** 2 + ((p[1] - latlng.lng) * 0.76) ** 2;
+    if (d < bd) { bd = d; best = { ri, pi }; }
+  }));
+  return best;
+}
+function edgesContaining(ri, pi) {
+  const res = [];
+  NETWORK.edges.forEach((e, ei) => { if (e[2] === ri && e[3] <= pi && pi <= e[4]) res.push(ei); });
+  return res;
+}
+function endpointFor(ri, pi) { // node id if click is at an anchor, else temp descriptor
+  for (const ei of edgesContaining(ri, pi)) {
+    const e = NETWORK.edges[ei];
+    if (e[3] === pi) return { node: e[0] };
+    if (e[4] === pi) return { node: e[1] };
+  }
+  const eis = edgesContaining(ri, pi);
+  if (!eis.length) return null;
+  return { temp: { ri, pi, eis } };
+}
+
+function dijkstra(srcEp, dstEp) {
+  // temp node ids: -1 (src), -2 (dst)
+  const dist = new Map(), prev = new Map();
+  const tempAdj = new Map();
+  function addTemp(id, ep) {
+    if (!ep.temp) return;
+    const { ri, pi, eis } = ep.temp;
+    const cum = cumR(ri);
+    const list = [];
+    for (const ei of eis) {
+      const e = NETWORK.edges[ei];
+      list.push({ to: e[0], ei, mi: Math.abs(cum[pi] - cum[e[3]]), tempSplit: { ri, from: pi, to: e[3] } });
+      list.push({ to: e[1], ei, mi: Math.abs(cum[e[4]] - cum[pi]), tempSplit: { ri, from: pi, to: e[4] } });
+      // let graph reach the temp node too
+      tempAdj.set(e[0], (tempAdj.get(e[0]) || []).concat([{ to: id, ei, mi: Math.abs(cum[pi] - cum[e[3]]), tempSplit: { ri, from: e[3], to: pi } }]));
+      tempAdj.set(e[1], (tempAdj.get(e[1]) || []).concat([{ to: id, ei, mi: Math.abs(cum[e[4]] - cum[pi]), tempSplit: { ri, from: e[4], to: pi } }]));
+    }
+    tempAdj.set(id, list);
+  }
+  const srcId = srcEp.node !== undefined ? srcEp.node : -1;
+  const dstId = dstEp.node !== undefined ? dstEp.node : -2;
+  addTemp(-1, srcEp); addTemp(-2, dstEp);
+  const pq = [[0, srcId]];
+  dist.set(srcId, 0);
+  while (pq.length) {
+    pq.sort((x, y) => x[0] - y[0]);
+    const [d, u] = pq.shift();
+    if (d > (dist.get(u) ?? Infinity)) continue;
+    if (u === dstId) break;
+    const nbrs = (u >= 0 ? adj[u] : []).concat(tempAdj.get(u) || []);
+    for (const nb of nbrs) {
+      const nd = d + nb.mi;
+      if (nd < (dist.get(nb.to) ?? Infinity)) {
+        dist.set(nb.to, nd);
+        prev.set(nb.to, { from: u, nb });
+        pq.push([nd, nb.to]);
+      }
+    }
+  }
+  if (!dist.has(dstId)) return null;
+  const legs = [];
+  let cur = dstId;
+  while (cur !== srcId) {
+    const { from, nb } = prev.get(cur);
+    let leg;
+    if (nb.tempSplit) leg = { ri: nb.tempSplit.ri, i0: nb.tempSplit.from, i1: nb.tempSplit.to };
+    else {
+      const e = NETWORK.edges[nb.ei];
+      leg = nb.rev ? { ri: e[2], i0: e[4], i1: e[3] } : { ri: e[2], i0: e[3], i1: e[4] };
+    }
+    legs.unshift(leg);
+    cur = from;
+  }
+  return { legs, mi: dist.get(dstId) };
+}
+
+function nearestStationsFrom(ep, k) {
+  const dist = new Map(), found = [];
+  const start = ep.node !== undefined ? ep.node : null;
+  const pq = [];
+  if (start !== null) { dist.set(start, 0); pq.push([0, start]); }
+  else {
+    const { ri, pi, eis } = ep.temp, cum = cumR(ri);
+    for (const ei of eis) {
+      const e = NETWORK.edges[ei];
+      for (const [n, m] of [[e[0], Math.abs(cum[pi] - cum[e[3]])], [e[1], Math.abs(cum[e[4]] - cum[pi])]]) {
+        if (m < (dist.get(n) ?? Infinity)) { dist.set(n, m); pq.push([m, n]); }
+      }
+    }
+  }
+  const seen = new Set();
+  while (pq.length && found.length < k) {
+    pq.sort((x, y) => x[0] - y[0]);
+    const [d, u] = pq.shift();
+    if (seen.has(u)) continue;
+    seen.add(u);
+    if (NETWORK.nodes[u][2] && NETWORK.nodes[u][2].length) found.push({ node: u, mi: d });
+    for (const nb of adj[u]) {
+      const nd = d + nb.mi;
+      if (nd < (dist.get(nb.to) ?? Infinity) && nd < 12) { dist.set(nb.to, nd); pq.push([nd, nb.to]); }
+    }
+  }
+  return found;
+}
+
+function epLatLng(ep) {
+  if (ep.node !== undefined) return [NETWORK.nodes[ep.node][0], NETWORK.nodes[ep.node][1]];
+  return ROUTES[ep.temp.ri].pts[ep.temp.pi];
+}
+
+function planClick(nodeOrLatLng) {
+  map.closePopup();
+  let ep;
+  if (typeof nodeOrLatLng === 'number') ep = { node: nodeOrLatLng };
+  else {
+    const s = nearestTrailPoint(nodeOrLatLng);
+    if (!s) return;
+    ep = endpointFor(s.ri, s.pi);
+    if (!ep) return;
+  }
+  if (!tripStart || (tripStart && tripEnd)) {
+    tripStart = ep; tripEnd = null;
+    drawTrip(null);
+  } else {
+    tripEnd = ep;
+    const s = epLatLng(tripStart), e2 = epLatLng(tripEnd);
+    history.replaceState(null, '', '#trip=' + [s[0], s[1], e2[0], e2[1]].map(x => x.toFixed(4)).join(','));
+    drawTrip(dijkstra(tripStart, tripEnd));
+  }
+}
+
+function mkPin(latlng, txt, bg) {
+  return L.marker(latlng, {
+    icon: L.divIcon({ className: 'se-wrap', html: `<div class="se-icon" style="background:${bg}">${txt}</div>`, iconSize: [20, 20], iconAnchor: [10, 10] }),
+    zIndexOffset: 950, interactive: false,
+  });
+}
+
+function drawTrip(result) {
+  tripLayer.clearLayers();
+  if (tripStart) tripLayer.addLayer(mkPin(epLatLng(tripStart), 'S', '#2e7d32'));
+  if (tripEnd) tripLayer.addLayer(mkPin(epLatLng(tripEnd), 'E', '#1c2430'));
+  if (!result) {
+    if (tripStart && tripEnd) showTripPanel(null);
+    else if (tripStart) {
+      document.getElementById('detailContent').innerHTML =
+        '<h2>✏️ Trip planner</h2><div class="desc">Start set. Now click the <b>end</b> of your trip — any station dot or spot on a trail.</div>';
+      detailEl.classList.add('open');
+    }
+    return;
+  }
+  // merge consecutive same-route legs
+  const merged = [];
+  for (const l of result.legs) {
+    const last = merged[merged.length - 1];
+    if (last && last.ri === l.ri && last.i1 === l.i0) last.i1 = l.i1;
+    else merged.push({ ...l });
+  }
+  result.merged = merged;
+  for (const l of merged) {
+    const r = ROUTES[l.ri], cls = clsArr(l.ri);
+    const lo = Math.min(l.i0, l.i1), hi = Math.max(l.i0, l.i1);
+    const runs = { 1: [], 0: [] };
+    let s = lo;
+    for (let i = lo + 1; i <= hi; i++) {
+      if (i === hi || cls[i + 1] !== cls[s + 1]) {
+        runs[cls[s + 1] ? 1 : 0].push(r.pts.slice(s, i + 1));
+        s = i;
+      }
+    }
+    tripLayer.addLayer(L.polyline(runs[1].concat(runs[0]).length ? r.pts.slice(lo, hi + 1) : [], { color: '#fff', weight: 9, opacity: .9, interactive: false }));
+    if (runs[1].length) tripLayer.addLayer(L.polyline(runs[1], { color: '#0d47a1', weight: 5.5, opacity: .97, interactive: false }));
+    if (runs[0].length) tripLayer.addLayer(L.polyline(runs[0], { color: '#0d47a1', weight: 4.5, opacity: .97, dashArray: '5 7', interactive: false }));
+  }
+  showTripPanel(result);
+}
+
+function stationsHtml(ep, label) {
+  const near = nearestStationsFrom(ep, 2);
+  if (!near.length) return `<div class="trainbox"><b>🚆 ${label}:</b> no train access within 12 trail miles</div>`;
+  return `<div class="trainbox"><b>🚆 ${label}</b><br>` + near.map(f => {
+    const sts = NETWORK.nodes[f.node][2].slice(0, 2).map(s => `${s[0]} <span style="color:#67737f">(${s[1]})</span>`).join(', ');
+    return `${sts}${f.mi > 0.05 ? ' — ' + f.mi.toFixed(1) + ' mi along the trail' : ' — right here'}`;
+  }).join('<br>') + '</div>';
+}
+
+function showTripPanel(result) {
+  if (!result) {
+    document.getElementById('detailContent').innerHTML =
+      '<h2>✏️ No trail connection</h2><div class="desc">These two points aren\'t connected by the car-free network — they\'re on separate trail systems. Take a train between them: check the nearest stations to each point (hover the station dots), or pick endpoints on the same trail system.</div>' +
+      stationsHtml(tripStart, 'Near your start') + stationsHtml(tripEnd, 'Near your end');
+    detailEl.classList.add('open');
+    return;
+  }
+  let mi = 0, ded = 0, climb = 0;
+  const eles = [], legRows = [];
+  for (const l of result.merged) {
+    const st = legStats(l.ri, l.i0, l.i1);
+    mi += st.mi; ded += st.ded; climb += st.climb;
+    const r = ROUTES[l.ri];
+    const slice = l.i0 < l.i1 ? r.ele.slice(l.i0, l.i1 + 1) : r.ele.slice(l.i1, l.i0 + 1).reverse();
+    eles.push(...slice);
+    legRows.push(`<div class="leg-row"><span class="nm" style="color:${r.color}">${r.name.split(':')[0]}</span>
+      <span class="sub">${st.mi.toFixed(1)} mi · ${Math.round(100 * st.ded / Math.max(st.mi, .01))}% car-free</span></div>`);
+  }
+  const cf = Math.round(100 * ded / Math.max(mi, .01));
+  // elevation sparkline
+  let ele = '';
+  if (eles.length > 2) {
+    const W = 320, H = 56, P = 2;
+    let mn = Math.min(...eles), mx = Math.max(...eles);
+    if (mx - mn < 30) mx = mn + 30;
+    const x = i => P + (W - 2 * P) * i / (eles.length - 1);
+    const y = e => H - P - (H - 2 * P) * (e - mn) / (mx - mn);
+    let path = `M${x(0).toFixed(1)},${y(eles[0]).toFixed(1)}`;
+    for (let i = 1; i < eles.length; i++) path += `L${x(i).toFixed(1)},${y(eles[i]).toFixed(1)}`;
+    ele = `<div class="elebox"><svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" style="display:block;background:var(--panel);border:1px solid var(--border);border-radius:8px">
+      <path d="${path}L${W - P},${H - P}L${P},${H - P}Z" fill="#0d47a1" opacity=".15"/>
+      <path d="${path}" fill="none" stroke="#0d47a1" stroke-width="1.8"/></svg>
+      <div class="elabels"><span>${mn}–${Math.max(...eles)} ft</span><span>${mi.toFixed(1)} mi →</span></div></div>`;
+  }
+  window._tripResult = result;
+  document.getElementById('detailContent').innerHTML = `
+    <h2>✏️ Your trip</h2>
+    <div class="stats">
+      <div class="stat"><div class="v">${mi.toFixed(1)} mi</div><div class="k">one way</div></div>
+      <div class="stat"><div class="v">${cf}%</div><div class="k">car-free</div></div>
+      <div class="stat"><div class="v">${Math.round(climb)} ft</div><div class="k">climbing</div></div>
+    </div>
+    ${ele}
+    ${stationsHtml(tripStart, 'Train access at start')}
+    ${stationsHtml(tripEnd, 'Train access at end')}
+    <div style="margin:6px 0 2px;font-weight:700;font-size:12px;color:var(--muted);text-transform:uppercase">Segments</div>
+    ${legRows.join('')}
+    <div class="actions" style="margin-top:10px">
+      <button onclick="tripGpx()">⬇ GPX of this trip</button>
+      <button onclick="tripStart=null;tripEnd=null;drawTrip(null);detailEl.classList.remove('open')">✕ Clear</button>
+    </div>`;
+  detailEl.classList.add('open');
+}
+
+function tripGpx() {
+  const result = window._tripResult;
+  if (!result) return;
+  let body = '';
+  for (const l of result.merged) {
+    const r = ROUTES[l.ri];
+    let idx = [];
+    if (l.i0 < l.i1) for (let i = l.i0; i <= l.i1; i++) idx.push(i);
+    else for (let i = l.i0; i >= l.i1; i--) idx.push(i);
+    body += idx.map(i => `      <trkpt lat="${r.pts[i][0]}" lon="${r.pts[i][1]}"><ele>${((r.ele[i] || 0) / 3.281).toFixed(1)}</ele></trkpt>`).join('\n') + '\n';
+  }
+  const gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="nyc-bike-map" xmlns="http://www.topografix.com/GPX/1/1">\n  <trk><name>Custom trip</name><trkseg>\n${body}  </trkseg></trk>\n</gpx>`;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+  a.download = 'trip.gpx';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function setMode(trip) {
+  tripMode = trip;
+  document.body.classList.toggle('trip', trip);
+  document.getElementById('mTrip').classList.toggle('on', trip);
+  document.getElementById('mExplore').classList.toggle('on', !trip);
+  clearActive();
+  if (trip) {
+    stationLayer.addTo(map); tripLayer.addTo(map);
+    ROUTES.forEach(r => { r._lines.forEach(l => l.setStyle({ opacity: .45 })); r._casing.setStyle({ opacity: .4 }); });
+  } else {
+    map.removeLayer(stationLayer); map.removeLayer(tripLayer);
+    tripStart = tripEnd = null; tripLayer.clearLayers();
+    refreshStyles();
+  }
+}
+document.getElementById('mExplore').addEventListener('click', () => setMode(false));
+document.getElementById('mTrip').addEventListener('click', () => setMode(true));
+map.on('click', e => { if (tripMode) planClick(e.latlng); });
+
+// deep-link: #route-id opens a route; #trip=lat,lon,lat,lon plans a trip
+const hashId = decodeURIComponent(location.hash.slice(1));
+if (hashId.startsWith('trip=')) {
+  const v = hashId.slice(5).split(',').map(Number);
+  if (v.length === 4 && v.every(x => isFinite(x))) {
+    setMode(true);
+    planClick(L.latLng(v[0], v[1]));
+    planClick(L.latLng(v[2], v[3]));
+    const b = L.latLngBounds([[v[0], v[1]], [v[2], v[3]]]);
+    map.fitBounds(b.pad(0.3));
+  }
+} else if (hashId && ROUTES.some(r => r.id === hashId)) setActive(hashId, true);
 else map.fitBounds(regionBounds, { padding: [30, 30] });
 </script>
 </body>

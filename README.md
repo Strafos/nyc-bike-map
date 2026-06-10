@@ -10,6 +10,11 @@ clearly marked.
 
 ## Features
 
+- **Trip planner**: the trails are split into segments at every train station and
+  junction — click any two points and the shortest car-free path is composed for you,
+  with train access at both ends, stats, elevation, and GPX. Trips are shareable via
+  URL (`#trip=lat,lon,lat,lon`).
+
 - Solid lines = dedicated car-free path; dashed colored lines = on-road sections —
   classified per segment from OpenStreetMap way tags, with a measured car-free % per route
 - Railway-hatched gray lines = train/subway transfers; dotted = ferries

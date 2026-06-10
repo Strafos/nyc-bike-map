@@ -596,10 +596,177 @@ for r in ROUTES:
     r['surface'], r['tags'] = EXTRAS[r['id']]
     out.append(r)
 
+
+# ================= SEGMENT NETWORK =================
+# Build a graph of trail segments between access points (stations, junctions,
+# endpoints) so the client can compose custom trips.
+import math
+
+def _hav(a, b):
+    R = 3958.8; d2r = math.pi / 180
+    dlat = (b[0] - a[0]) * d2r; dlon = (b[1] - a[1]) * d2r
+    s = math.sin(dlat/2)**2 + math.cos(a[0]*d2r) * math.cos(b[0]*d2r) * math.sin(dlon/2)**2
+    return 2 * R * math.asin(min(1, math.sqrt(s)))
+
+CELL = 0.0015  # ~150 m grid
+def _cell(p): return (int(p[0] / CELL), int(p[1] / CELL))
+
+_grid = {}
+for _ri, _r in enumerate(out):
+    for _pi, _p in enumerate(_r['pts']):
+        _grid.setdefault(_cell(_p), []).append((_ri, _pi))
+
+def _near(p, radius_mi):
+    c = _cell(p)
+    rng = int(radius_mi / (CELL * 69)) + 1
+    res = []
+    for dx in range(-rng, rng + 1):
+        for dy in range(-rng, rng + 1):
+            for ri, pi in _grid.get((c[0] + dx, c[1] + dy), []):
+                if _hav(p, out[ri]['pts'][pi]) <= radius_mi:
+                    res.append((ri, pi))
+    return res
+
+# ---- anchors: (route, pt index, station payload or None) ----
+anchors = []
+
+sd = json.load(open(os.path.join(DATA, 'stations.json')))
+n_station = 0
+for el in sd.get('elements', []):
+    t = el.get('tags', {})
+    lat = el.get('lat') or (el.get('center') or {}).get('lat')
+    lon = el.get('lon') or (el.get('center') or {}).get('lon')
+    name = t.get('name')
+    if lat is None or not name:
+        continue
+    net = t.get('network') or t.get('operator') or ''
+    if 'SEPTA' in net:
+        continue
+    subway = 1 if (t.get('station') == 'subway' or 'Subway' in net or net == 'PATH') else 0
+    best = {}
+    for ri, pi in _near((lat, lon), 0.45):
+        dmi = _hav((lat, lon), out[ri]['pts'][pi])
+        if ri not in best or dmi < best[ri][1]:
+            best[ri] = (pi, dmi)
+    for ri, (pi, dmi) in best.items():
+        anchors.append((ri, pi, (name, net, round(dmi, 2), subway)))
+        n_station += 1
+
+# ---- junction anchors at boundaries of route-overlap runs ----
+for ri, r in enumerate(out):
+    near_sets = [{x[0] for x in _near(p, 0.06)} - {ri} for p in r['pts']]
+    others = set().union(*near_sets) if near_sets else set()
+    for rj in others:
+        flags = [rj in s for s in near_sets]
+        # bridge gaps shorter than 4 points
+        i = 0
+        while i < len(flags):
+            if not flags[i]:
+                j = i
+                while j < len(flags) and not flags[j]:
+                    j += 1
+                if 0 < i and j < len(flags) and j - i < 4:
+                    for k in range(i, j):
+                        flags[k] = True
+                i = j
+            else:
+                i += 1
+        i = 0
+        while i < len(flags):
+            if flags[i]:
+                j = i
+                while j < len(flags) and flags[j]:
+                    j += 1
+                if j - i > 2:
+                    anchors.append((ri, i, None))
+                    anchors.append((ri, j - 1, None))
+                i = j
+            else:
+                i += 1
+
+for ri, r in enumerate(out):
+    anchors.append((ri, 0, None))
+    anchors.append((ri, len(r['pts']) - 1, None))
+
+# ---- cluster anchors within ~0.07 mi into nodes (union-find) ----
+parent = list(range(len(anchors)))
+def _find(x):
+    while parent[x] != x:
+        parent[x] = parent[parent[x]]
+        x = parent[x]
+    return x
+def _union(a, b):
+    ra, rb = _find(a), _find(b)
+    if ra != rb:
+        parent[rb] = ra
+
+agrid = {}
+for ai, (ri, pi, _) in enumerate(anchors):
+    agrid.setdefault(_cell(out[ri]['pts'][pi]), []).append(ai)
+for ai, (ri, pi, _) in enumerate(anchors):
+    p = out[ri]['pts'][pi]
+    c = _cell(p)
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for bi in agrid.get((c[0] + dx, c[1] + dy), []):
+                rj, pj, _2 = anchors[bi]
+                if bi != ai and _hav(p, out[rj]['pts'][pj]) <= 0.07:
+                    _union(ai, bi)
+
+clusters = {}
+for ai in range(len(anchors)):
+    clusters.setdefault(_find(ai), []).append(ai)
+
+nodes = []           # [lat, lon, stations]
+node_of_anchor = {}
+for root_ai, members in clusters.items():
+    lats = [out[anchors[ai][0]]['pts'][anchors[ai][1]][0] for ai in members]
+    lons = [out[anchors[ai][0]]['pts'][anchors[ai][1]][1] for ai in members]
+    seen, stations = set(), []
+    for ai in members:
+        st = anchors[ai][2]
+        if st and st[0] not in seen:
+            seen.add(st[0])
+            stations.append(list(st))
+    nid = len(nodes)
+    nodes.append([round(sum(lats)/len(lats), 5), round(sum(lons)/len(lons), 5),
+                  sorted(stations, key=lambda s: s[2])[:4]])
+    for ai in members:
+        node_of_anchor[ai] = nid
+
+# ---- edges between consecutive anchors along each route ----
+edges = []
+seen_edges = set()
+by_route = {}
+for ai, (ri, pi, _) in enumerate(anchors):
+    by_route.setdefault(ri, {}).setdefault(pi, node_of_anchor[ai])
+for ri, pimap in by_route.items():
+    pts = out[ri]['pts']
+    cum = [0.0]
+    for i in range(1, len(pts)):
+        cum.append(cum[-1] + _hav(pts[i-1], pts[i]))
+    pis = sorted(pimap)
+    for k in range(len(pis) - 1):
+        i0, i1 = pis[k], pis[k + 1]
+        a, b = pimap[i0], pimap[i1]
+        if a == b or cum[i1] - cum[i0] < 0.03:
+            continue
+        key = (min(a, b), max(a, b), ri)
+        if key in seen_edges:
+            continue
+        seen_edges.add(key)
+        edges.append([a, b, ri, i0, i1])
+
+n_st_nodes = sum(1 for n in nodes if n[2])
+print(f"network: {len(nodes)} nodes ({n_st_nodes} with stations), {len(edges)} edges, "
+      f"{n_station} station anchors")
+NETWORK = {'nodes': nodes, 'edges': edges}
+
 root = os.path.dirname(__file__)
 data_js = ('// Route geometries from BRouter (OpenStreetMap data)\n'
            'const ROUTES = ' + json.dumps(out) + ';\n'
-           'const TRAINLINES = ' + json.dumps(TRAINLINES) + ';\n')
+           'const TRAINLINES = ' + json.dumps(TRAINLINES) + ';\n'
+           'const NETWORK = ' + json.dumps(NETWORK) + ';\n')
 
 with open(os.path.join(root, 'routes.js'), 'w') as f:
     f.write(data_js)
