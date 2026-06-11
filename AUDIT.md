@@ -25,7 +25,7 @@ transit-to-trails guides (MTA Away, Discover Long Island). Status: ✅ drawn rou
 | **NJT Northeast Corridor** | D&R Canal towpath (Princeton ↔ New Brunswick); Middlesex Greenway (Metuchen, 3.5 mi) | ✅ / 📝 |
 | **NJT Raritan Valley** | Columbia Trail, High Bridge → Flanders (full extent) | ✅ |
 | **NJT North Jersey Coast** | Henry Hudson Trail Matawan → Popamora Pt (+ Freehold branch noted); Edgar Felix Bikeway (Manasquan → Allaire) | ✅✅ |
-| NJT Gladstone br. / Atlantic City line | nothing / out of range | 🚫 |
+| NJT Gladstone br. / Atlantic City line | nothing / Atlantic City still out of range | 🚫 |
 | **LIRR Babylon** | Wantagh→Jones Beach→Ocean Pkwy Greenway→Captree; Bethpage Bikeway Massapequa→Syosset | ✅✅ |
 | **LIRR Long Beach** | Long Beach boardwalk + Lido path → Point Lookout | ✅ |
 | **LIRR Port Jefferson** | Setauket Greenway + North Shore Rail Trail → Wading River; Bethpage Bikeway north end (Syosset) | ✅ |
@@ -42,6 +42,7 @@ transit-to-trails guides (MTA Away, Discover Long Island). Status: ✅ drawn rou
 | **Staten Island Ferry + SIR** | FDR Boardwalk → Great Kills; Wolfe's Pond via SIR | ✅ / 📝 |
 | **Governors Is. / Liberty / Seastreak / PJ-Bridgeport / Haverstraw-Ossining ferries** | Governors loop; Liberty SP; Sandy Hook; cross-Sound combo; Haverstraw shortcut | ✅✅✅✅✅ |
 | **Bike-only (no transit needed)** | Central Park; HRG both halves; Manhattan loop; Randall's; Brooklyn/Verrazzano→Caesar's Bay; Coney via Ocean Pkwy; Mosholu-Pelham→City Island; GWB→Piermont→Nyack; Empire State Trail→Brewster | ✅ ×10 |
+| **Philadelphia extension: Amtrak/NJT+SEPTA to 30th St** | Schuylkill River Trail to Manayunk/Norristown/Valley Forge/Phoenixville; Wissahickon Forbidden Drive; Pennypack Trail from Fox Chase; Chester Valley Trail; Cynwyd Heritage Trail + Manayunk Bridge; Delaware River Trail | ✅✅✅✅✅✅ |
 
 ## Counties (trail-inventory cross-check)
 
@@ -54,10 +55,10 @@ Bergen ✅ (Saddle River; Overpeck 📝) · Essex/Hudson NJ ✅ (Liberty SP; Ess
 Morris ✅ (Columbia Trail; Traction/Loantaka/Patriots' Path 📝) · Sussex ✅ (Sussex Branch; Paulinskill 📝) ·
 Middlesex ✅ (D&R; Middlesex Greenway 📝) · Monmouth ✅ (HHT, Sandy Hook, Edgar Felix) ·
 Nassau ✅ (Jones Beach, Bethpage, Long Beach) · Suffolk ✅ (OPCG→Captree, NSRT, Setauket) ·
-Queens/Kings/Bronx/Richmond/NY ✅ throughout.
+Queens/Kings/Bronx/Richmond/NY ✅ throughout · Philadelphia/Montgomery/Chester PA ✅ via the Philly extension.
 
 ## Deliberate exclusions
 - **High Line** — bikes prohibited
 - **Rockefeller State Park Preserve carriage roads** — bikes prohibited
 - **9W road classic** — replaced by the lower-traffic Piermont/Palisades routing
-- **Port Jervis, Trenton, Montauk, New London** — beyond the 2-hour line
+- **Port Jervis, Montauk, New London, Atlantic City** — beyond the practical day-trip line

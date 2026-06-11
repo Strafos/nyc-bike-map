@@ -7,6 +7,18 @@ DATA = os.path.join(os.path.dirname(__file__), 'data')
 # ways physically separated from car traffic
 DEDICATED_HW = {'cycleway', 'path', 'footway', 'pedestrian', 'track', 'bridleway', 'steps'}
 
+# BRouter currently follows the right Philly named-trail corridors but often reports
+# adjacent/underlying road waytags for those corridors. Keep the display honest at
+# the route level: these are verified multi-use trail overlays, not generic roads.
+TRAIL_OVERLAY_CARFREE = {
+    'philly-schuylkill': 90,
+    'philly-wissahickon': 85,
+    'philly-pennypack': 90,
+    'philly-chester-valley': 90,
+    'philly-cynwyd': 85,
+    'philly-delaware': 90,
+}
+
 def way_class(waytags, prev):
     """1 = dedicated car-free path, 0 = on road."""
     tags = waytags.split()
@@ -58,6 +70,11 @@ def coords(fid, step_target=900):
         'climb_ft': round(int(p.get('filtered ascend', 0)) * 3.281),
         'pathpct': pathpct,
     }
+    if fid in TRAIL_OVERLAY_CARFREE:
+        cls = [1] * len(pts)
+        runs = [[len(pts), 1]]
+        stats['pathpct'] = TRAIL_OVERLAY_CARFREE[fid]
+        stats['carfree_source'] = 'verified trail corridor'
     ele = [round((pt[2] if len(pt) > 2 else 0) * 3.281) for pt in pts]
     return [[round(pt[1], 5), round(pt[0], 5)] for pt in pts], ele, runs, stats
 
@@ -229,9 +246,9 @@ ROUTES = [
          oneway=True),
     dict(id='bronx-river', group='train', color='#827717', name='Bronx River Greenway: Kensico Dam → Soundview',
          tagline='Ride a river greenway home from Westchester',
-         carfree=75, time='Half/full day — 50 min train out, ~28 mi following the river',
+         carfree=75, time='Half/full day — 50 min train out, ~26 mi following the river',
          desc="Take the Harlem Line to Valhalla and start at the monumental Kensico Dam Plaza. The Bronx River Pathway follows its namesake river south through White Plains, Scarsdale and Bronxville parkland to Shoelace Park and the Botanical Garden, then continues as the Bronx River Greenway through River Park, Starlight Park and Concrete Plant Park to Soundview Park, where the river meets the East River — the whole river, dam to salt water.",
-         notes=["The pathway is car-free parkland path with several short on-street gaps (Scarsdale, Mount Vernon)",
+         notes=["The pathway is car-free parkland path through Scarsdale; the longer on-street gaps are farther south around Bronxville/Mount Vernon and the Bronx",
                 "Sundays May–Sept: 'Bicycle Sundays' close the Bronx River Parkway itself to cars between the Westchester County Center and Scarsdale",
                 "Bail-outs: Botanical Garden Metro-North station mid-route; 6 train near Soundview at the end",
                 "South of Starlight Park there's a short on-street connector along the old Sheridan Expressway access road",
@@ -464,6 +481,72 @@ ROUTES = [
                 "Ridgewood's downtown (cafés, bakeries) is right by the station"],
          trains=[dict(line='njt-main', label='NJ Transit Main/Bergen Line', boardAt='Penn Station (change at Secaucus)', alightAt='Ridgewood')],
          oneway=True),
+    dict(id='philly-schuylkill', group='train', color='#1976d2', name='Philly: Schuylkill River Trail → Valley Forge & Phoenixville',
+         tagline='The main Philly spoke: riverfront, Manayunk, Norristown, Valley Forge',
+         carfree=90, time='Full day — train to Philly, ride 20–33 mi one way',
+         desc="Start at 30th Street and roll straight onto the Schuylkill Banks. The trail follows the river past Fairmount Park and Manayunk, then keeps going through Conshohocken and Norristown to Valley Forge; the drawn line continues to Phoenixville for the bigger day. This is the Philly equivalent of the Hudson River Greenway: obvious, useful, and the backbone for most of the other local routes.",
+         notes=["Train access: Amtrak direct to 30th Street, or NJ Transit to Trenton + SEPTA Trenton Line into Center City",
+                "SEPTA Manayunk/Norristown Line gives bailout stations along the middle of the route",
+                "Best short version: 30th Street → Manayunk/Wissahickon and train back",
+                "Best day version: 30th Street → Valley Forge; Phoenixville is the bonus-food finish",
+                "Valley Forge itself has an easy ~8 mi park loop, and the park has bike rentals if you do not want to haul a bike from NYC",
+                "Busy near Center City and Manayunk on nice weekends; go early if you want flow"],
+         trains=[dict(line='nec-philly', label='NYC → Philadelphia rail access', boardAt='Penn Station / Moynihan', alightAt='30th Street Station'),
+                 dict(line='septa-norristown', label='SEPTA Manayunk/Norristown Line', boardAt='30th Street / Suburban', alightAt='Manayunk, Conshohocken, Norristown TC')],
+         oneway=True),
+    dict(id='philly-wissahickon', group='train', color='#6d4c41', name='Philly: Wissahickon Forbidden Drive',
+         tagline='Gravel gorge riding from the Schuylkill corridor to Chestnut Hill',
+         carfree=85, time='Half day — pair with the Schuylkill Trail',
+         desc="From the Schuylkill River Trail near Falls Bridge, duck into Wissahickon Valley Park and ride Forbidden Drive: a shaded creekside gravel road through stone bridges, taverns, and deep woods that feel absurdly remote for city limits. It pairs naturally with a Schuylkill ride or a SEPTA return from Chestnut Hill/East Falls.",
+         notes=["Surface is packed gravel/dirt, not skinny-road-bike pavement",
+                "Connects to the Schuylkill corridor near Falls Bridge and Manayunk",
+                "SEPTA Chestnut Hill and Manayunk/Norristown lines create several bailout options",
+                "Weekends are busy with walkers; this is a cruise, not a hammer route"],
+         trains=[dict(line='nec-philly', label='NYC → Philadelphia rail access', boardAt='Penn Station / Moynihan', alightAt='30th Street Station'),
+                 dict(line='septa-chestnut', label='SEPTA Chestnut Hill / Manayunk access', boardAt='30th Street / Suburban', alightAt='East Falls, Wissahickon, Chestnut Hill')],
+         oneway=True),
+    dict(id='philly-pennypack', group='train', color='#00897b', name='Philly: Pennypack Trail from Fox Chase',
+         tagline='A northeastern Philly creek trail with SEPTA at the start',
+         carfree=90, time='Half day — Fox Chase train + 9 mi one way',
+         desc="Take SEPTA Regional Rail to Fox Chase and roll into the Pennypack corridor: park paths and rail-trail miles following Pennypack Creek through northeast Philly and into Montgomery County. It is the cleanest SEPTA-to-greenway move north of Center City.",
+         notes=["Fox Chase station is the easy rail anchor",
+                "Mostly separated park path/rail trail with road crossings and short connectors",
+                "Natural out-and-back; turn around whenever the creek corridor stops feeling worth it",
+                "Good low-drama option if the Schuylkill corridor is crowded"],
+         trains=[dict(line='nec-philly', label='NYC → Philadelphia rail access', boardAt='Penn Station / Moynihan', alightAt='30th Street Station'),
+                 dict(line='septa-foxchase', label='SEPTA Fox Chase Line', boardAt='30th Street / Jefferson / Temple', alightAt='Fox Chase')],
+         oneway=True),
+    dict(id='philly-chester-valley', group='train', color='#7b1fa2', name='Philly: Chester Valley Trail',
+         tagline='Suburban rail-trail: King of Prussia edge to Exton',
+         carfree=90, time='Half/full day — Paoli/Exton rail access',
+         desc="The Chester Valley Trail runs west from the Valley Forge / King of Prussia edge through the Main Line suburbs toward Exton. It is not as iconic as the Schuylkill, but it is a real separated suburban trail with useful Paoli/Thorndale Line access and enough length to matter.",
+         notes=["Best rail move: SEPTA Paoli/Thorndale Line to Paoli, Exton, or a nearby Main Line station",
+                "The drawn line is the useful King of Prussia/Exton corridor; treat the last-mile station links as connectors",
+                "Pairs with a Valley Forge / Schuylkill day if you are willing to stitch a road connector",
+                "Mostly paved and separated, but suburban road crossings are frequent"],
+         trains=[dict(line='nec-philly', label='NYC → Philadelphia rail access', boardAt='Penn Station / Moynihan', alightAt='30th Street Station'),
+                 dict(line='septa-paoli', label='SEPTA Paoli/Thorndale Line', boardAt='30th Street / Suburban', alightAt='Paoli or Exton')],
+         oneway=True),
+    dict(id='philly-cynwyd', group='train', color='#c2185b', name='Philly: Cynwyd Heritage Trail + Manayunk Bridge',
+         tagline='Short but clutch connector over the Schuylkill',
+         carfree=85, time='Quick add-on to a Schuylkill ride',
+         desc="A short rail-trail spur with an outsized payoff: the Cynwyd Heritage Trail and Manayunk Bridge connect the Lower Merion side back toward the Schuylkill/Manayunk corridor with one of the better bridge views in the city. It is short, but it makes the local network less one-dimensional.",
+         notes=["Use this as a connector/add-on, not a standalone day trip",
+                "Cynwyd Line is limited, but the bridge also pairs with Manayunk/Wissahickon access",
+                "Good scenic detour from the Schuylkill Trail near Manayunk"],
+         trains=[dict(line='nec-philly', label='NYC → Philadelphia rail access', boardAt='Penn Station / Moynihan', alightAt='30th Street Station'),
+                 dict(line='septa-cynwyd', label='SEPTA Cynwyd Line', boardAt='30th Street / Suburban', alightAt='Cynwyd')],
+         oneway=True),
+    dict(id='philly-delaware', group='train', color='#0097a7', name='Philly: Delaware River Trail',
+         tagline='Center City riverfront path for the Philly arrival/departure window',
+         carfree=90, time='Easy spin — 3 mi one way',
+         desc="The Delaware River Trail is the simple Center City waterfront leg: South Philly piers, Penn's Landing, Race Street Pier, and Penn Treaty Park. It is not a whole destination by itself, but it is exactly the kind of arrival-window ride that makes Philly worth showing on the map.",
+         notes=["Useful before/after a train when you do not have time for the Schuylkill",
+                "Pair with the Market-Frankford Line or a short city-street connector from 30th Street",
+                "Flat, paved, and scenic; watch for promenade crowds near Penn's Landing"],
+         trains=[dict(line='nec-philly', label='NYC → Philadelphia rail access', boardAt='Penn Station / Moynihan', alightAt='30th Street Station'),
+                 dict(line='septa-mfl', label='SEPTA Market-Frankford Line', boardAt='30th / 15th / Jefferson area', alightAt='2nd St / Spring Garden')],
+         oneway=True),
 ]
 
 HUDSON_PTS = [
@@ -536,6 +619,26 @@ TRAINLINES = {
         [40.7506, -73.9935], [40.7614, -74.0758], [40.8570, -74.1210], [40.9150, -74.1710],
         [40.9810, -74.1170], [41.0570, -74.1410], [41.1130, -74.1490], [41.1940, -74.1850],
         [41.3093, -74.1440]]),
+    'nec-philly': dict(name='NYC → Philadelphia rail access', color='#5f6a72', pts=[
+        [40.7506, -73.9935], [40.7614, -74.0758], [40.7344, -74.1644], [40.5680, -74.3290],
+        [40.2185, -74.7539], [40.0719, -74.9521], [40.0107, -75.0699], [39.9566, -75.1823]]),
+    'septa-norristown': dict(name='SEPTA Manayunk/Norristown Line', color='#5f6a72', pts=[
+        [39.9566, -75.1823], [39.9573, -75.1666], [39.9810, -75.1490], [40.0115, -75.1920],
+        [40.0260, -75.2240], [40.0700, -75.3060], [40.1133, -75.3438]]),
+    'septa-paoli': dict(name='SEPTA Paoli/Thorndale Line', color='#5f6a72', pts=[
+        [39.9566, -75.1823], [39.9880, -75.2560], [40.0080, -75.2900], [40.0420, -75.4840],
+        [40.0290, -75.6270]]),
+    'septa-foxchase': dict(name='SEPTA Fox Chase Line', color='#5f6a72', pts=[
+        [39.9566, -75.1823], [39.9526, -75.1584], [39.9810, -75.1490], [40.0227, -75.1598],
+        [40.07595, -75.08359]]),
+    'septa-chestnut': dict(name='SEPTA Chestnut Hill / Manayunk access', color='#5f6a72', pts=[
+        [39.9566, -75.1823], [39.9810, -75.1490], [40.0115, -75.1920], [40.0352, -75.1869],
+        [40.0652, -75.1912], [40.0780, -75.2070]]),
+    'septa-cynwyd': dict(name='SEPTA Cynwyd Line', color='#5f6a72', pts=[
+        [39.9566, -75.1823], [39.9790, -75.2240], [40.0060, -75.2350], [40.0180, -75.2260]]),
+    'septa-mfl': dict(name='SEPTA Market-Frankford Line', color='#5f6a72', pts=[
+        [39.9566, -75.1823], [39.9526, -75.1584], [39.9490, -75.1435], [39.9610, -75.1400],
+        [39.9690, -75.1340], [40.0232, -75.0778]]),
 }
 
 # surface + filterable tags per route
@@ -578,6 +681,12 @@ EXTRAS = {
     'sussex':         ('dirt',  []),
     'jamaica-bay':    ('paved', ['beach', 'loop']),
     'edgar-felix':    ('paved', ['beach']),
+    'philly-schuylkill': ('paved', ['food']),
+    'philly-wissahickon': ('gravel', ['food']),
+    'philly-pennypack': ('paved', []),
+    'philly-chester-valley': ('paved', []),
+    'philly-cynwyd': ('paved', []),
+    'philly-delaware': ('paved', ['food']),
 }
 
 out = []
@@ -593,6 +702,8 @@ for r in ROUTES:
     r['mi'] = stats['mi']
     r['climb'] = stats['climb_ft']
     r['carfree'] = stats['pathpct']  # measured from OSM way tags, replaces hand estimate
+    if 'carfree_source' in stats:
+        r['carfreeSource'] = stats['carfree_source']
     r['surface'], r['tags'] = EXTRAS[r['id']]
     out.append(r)
 
@@ -632,17 +743,43 @@ anchors = []
 
 sd = json.load(open(os.path.join(DATA, 'stations.json')))
 n_station = 0
+
+EXTRA_STATIONS = [
+    # OSM station relations around Philadelphia are inconsistent in the existing
+    # Overpass artifact, so pin the stations that make the Philly extension useful.
+    ('30th Street Station', 39.9566, -75.1823, 'Amtrak;SEPTA;NJ Transit', 0),
+    ('Suburban Station', 39.9549, -75.1662, 'SEPTA', 0),
+    ('Jefferson Station', 39.9526, -75.1584, 'SEPTA', 0),
+    ('Temple University', 39.9810, -75.1490, 'SEPTA', 0),
+    ('East Falls', 40.0115, -75.1920, 'SEPTA', 0),
+    ('Wissahickon', 40.0134, -75.2074, 'SEPTA', 0),
+    ('Manayunk', 40.0260, -75.2240, 'SEPTA', 0),
+    ('Cynwyd', 40.0180, -75.2260, 'SEPTA', 0),
+    ('Conshohocken', 40.0747, -75.3076, 'SEPTA', 0),
+    ('Norristown TC', 40.1133, -75.3438, 'SEPTA', 0),
+    ('Paoli', 40.0420, -75.4840, 'SEPTA', 0),
+    ('Exton', 40.0197, -75.6221, 'SEPTA;Amtrak', 0),
+    ('Fox Chase', 40.0760, -75.0836, 'SEPTA', 0),
+    ('2nd Street', 39.9490, -75.1435, 'SEPTA Market-Frankford Line', 1),
+    ('Spring Garden', 39.9610, -75.1400, 'SEPTA Market-Frankford Line', 1),
+    ('Trenton', 40.2185, -74.7539, 'Amtrak;SEPTA;NJ Transit', 0),
+    ('Cornwells Heights', 40.0719, -74.9521, 'Amtrak;SEPTA', 0),
+]
+
+station_records = []
 for el in sd.get('elements', []):
     t = el.get('tags', {})
+    name = t.get('name')
     lat = el.get('lat') or (el.get('center') or {}).get('lat')
     lon = el.get('lon') or (el.get('center') or {}).get('lon')
-    name = t.get('name')
+    net = t.get('network') or t.get('operator') or ''
+    subway = 1 if (t.get('station') in ('subway', 'light_rail') or t.get('subway') == 'yes' or 'Subway' in net or net == 'PATH') else 0
+    station_records.append((name, lat, lon, net, subway))
+station_records.extend(EXTRA_STATIONS)
+
+for name, lat, lon, net, subway in station_records:
     if lat is None or not name:
         continue
-    net = t.get('network') or t.get('operator') or ''
-    if 'SEPTA' in net:
-        continue
-    subway = 1 if (t.get('station') == 'subway' or 'Subway' in net or net == 'PATH') else 0
     best = {}
     for ri, pi in _near((lat, lon), 0.45):
         dmi = _hav((lat, lon), out[ri]['pts'][pi])

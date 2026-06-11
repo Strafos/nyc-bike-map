@@ -1,7 +1,7 @@
-# NYC Car-Free Bike Map
+# NYC + Philly Car-Free Bike Map
 
-An interactive map of **38 bike routes (~725 miles)** within a 2-hour journey of Midtown
-Manhattan by bike, train, or ferry — nearly all majority **dedicated car-free path**
+An interactive map of **NYC-region routes plus a Philly rail extension** reachable from
+Midtown Manhattan by bike, train, or ferry — nearly all majority **dedicated car-free path**
 (greenways, rail trails, boardwalks), plus a couple of legendary on-road classics,
 clearly marked.
 
@@ -15,8 +15,12 @@ clearly marked.
   with train access at both ends, stats, elevation, and GPX. Trips are shareable via
   URL (`#trip=lat,lon,lat,lon`).
 
+- Philly coverage now includes the Schuylkill River Trail / Valley Forge spine,
+  Wissahickon, Pennypack, Chester Valley, Cynwyd/Manayunk, and Delaware River Trail,
+  with Amtrak/NJT/SEPTA access lines, station anchors, and a Valley Forge park-loop/rental note
 - Solid lines = dedicated car-free path; dashed colored lines = on-road sections —
-  classified per segment from OpenStreetMap way tags, with a measured car-free % per route
+  classified per segment from OpenStreetMap way tags, with Philly named-trail corridors
+  pinned as verified trail overlays where OSM way tags under-report the path
 - Railway-hatched gray lines = train/subway transfers; dotted = ferries
 - Elevation profile, path-vs-road strip, time estimates, train boarding info per route
 - Search + filters (car-free %, surface, beach, loops, transit), GPX download, deep links

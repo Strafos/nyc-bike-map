@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NYC Car-Free Bike Map — every dedicated-path ride within 2 hours</title>
+<title>NYC + Philly Car-Free Bike Map — dedicated-path rides by train</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
@@ -178,10 +178,10 @@
   <button id="sbtoggle">☰ Routes</button>
   <div id="sidebar">
     <header>
-      <h1>🚲 NYC Car-Free Bike Map</h1>
-      <p>Every notable greenway &amp; rail trail within a <b>2-hour journey</b> of Midtown Manhattan by bike, train or ferry,
-         in all directions across NY, NJ, CT &amp; Long Island — nearly all majority <b>car-free dedicated path</b>,
-         plus a couple of legendary on-road classics (amber % badge). On the map, <b>solid lines are dedicated car-free path</b> and <b>dashed colored lines are on-road sections</b> — the car-free % on each card is measured from OpenStreetMap data.</p>
+      <h1>🚲 NYC + Philly Car-Free Bike Map</h1>
+      <p>Every notable greenway &amp; rail trail within the NYC day-trip orbit, plus a Philly rail extension by Amtrak/NJT/SEPTA,
+         across NY, NJ, CT, Long Island &amp; southeast PA — nearly all majority <b>car-free dedicated path</b>,
+         plus a couple of legendary on-road classics (amber % badge). On the map, <b>solid lines are dedicated car-free path</b> and <b>dashed colored lines are on-road sections</b> — the car-free % on each card is measured from OpenStreetMap data, with Philly named-trail corridors pinned as verified trail overlays where OSM way tags under-report the path.</p>
       <input id="search" type="search" placeholder="Search routes… (e.g. beach, rail trail, Hudson)">
       <div id="chips">
         <span class="chip" data-f="carfree">≥85% car-free</span>
@@ -412,6 +412,7 @@ GROUPS.forEach(gr => {
     c.addEventListener('click', e => {
       if (e.target.classList.contains('eyetoggle')) { toggleRoute(r.id); return; }
       setActive(r.id, true);
+      if (window.matchMedia('(max-width: 760px)').matches) document.getElementById('sidebar').classList.remove('open');
     });
     c.addEventListener('mouseenter', () => { if (matches(r)) r._lines.forEach(l => l.setStyle({ weight: 8, opacity: 1 })); });
     c.addEventListener('mouseleave', refreshStyles);
@@ -541,7 +542,7 @@ function segStrip(r) {
   }
   return `<div class="elebox">
     <svg width="100%" height="10" style="display:block;border-radius:5px;background:var(--panel)">${parts}</svg>
-    <div class="elabels"><span><span style="color:#2e7d32">■</span> car-free path&nbsp;&nbsp;<span style="color:#e65100">■</span> on road</span><span>${r.carfree}% car-free (measured)</span></div>
+    <div class="elabels"><span><span style="color:#2e7d32">■</span> car-free path&nbsp;&nbsp;<span style="color:#e65100">■</span> on road</span><span>${r.carfree}% car-free (${r.carfreeSource || 'measured'})</span></div>
   </div>`;
 }
 
